@@ -827,7 +827,7 @@ static __global__ void flash_attn_tile(
 
     if (
 #ifdef GGML_USE_WMMA_FATTN
-            (ncols2 != 1 && DV != 40 && DV != 72 && DV != 512) ||
+            (ncols2 != 1 && DV != 40 && DV != 72 && DV != 128 && DV != 256 && DV != 512) ||
 #endif // GGML_USE_WMMA_FATTN
             (use_logit_softcap && !(DV == 128 || DV == 256 || DV == 512))
     ) {
