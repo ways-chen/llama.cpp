@@ -344,6 +344,8 @@ static constexpr __device__ int get_mmvq_mmid_max_batch_for_device() {
     return MMVQ_MAX_BATCH_SIZE;
 #elif defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= GGML_CUDA_CC_TURING
     return get_mmvq_mmid_max_batch_turing_plus(type);
+#elif defined(__MUSA_ARCH__)
+    return MMVQ_MAX_BATCH_SIZE;
 #else
     return get_mmvq_mmid_max_batch_pascal_older(type);
 #endif
