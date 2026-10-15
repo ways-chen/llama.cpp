@@ -96,8 +96,8 @@ void global_from_json(context & ctx, const T_JSON & json_obj, bool mark_input);
 
 struct func_args; // function argument values
 
-using func_hptr = value(const func_args &);
-using func_handler = std::function<func_hptr>;
+using func_hptr     = value (*)(const func_args &);
+using func_handler  = std::function<value(const func_args &)>;
 using func_builtins = std::map<std::string, func_handler>;
 
 enum value_compare_op { eq, ge, gt, lt, ne };
