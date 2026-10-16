@@ -229,7 +229,7 @@ static constexpr __host__ __device__ fattn_mma_config ggml_cuda_fattn_mma_get_co
 }
 
 static __host__ fattn_mma_config ggml_cuda_fattn_mma_get_config(const int DKQ, const int DV, const int ncols, const int cc) {
-    if (ampere_mma_available(cc)) {
+    if (ampere_mma_available(cc) || musa_wmma_available(cc)) {
         return ggml_cuda_fattn_mma_get_config_ampere(DKQ, DV, ncols);
     }
     if (turing_mma_available(cc)) {
@@ -246,7 +246,7 @@ static __host__ fattn_mma_config ggml_cuda_fattn_mma_get_config(const int DKQ, c
 }
 
 static constexpr __device__ fattn_mma_config ggml_cuda_fattn_mma_get_config(const int DKQ, const int DV, const int ncols) {
-#if defined(AMPERE_MMA_AVAILABLE)
+#if defined(AMPERE_MMA_AVAILABLE) || defined(MUSA_WMMA_AVAILABLE)
     return ggml_cuda_fattn_mma_get_config_ampere(DKQ, DV, ncols);
 #elif defined(TURING_MMA_AVAILABLE)
     return ggml_cuda_fattn_mma_get_config_turing(DKQ, DV, ncols);
@@ -259,7 +259,7 @@ static constexpr __device__ fattn_mma_config ggml_cuda_fattn_mma_get_config(cons
 #else
     GGML_UNUSED_VARS(DKQ, DV, ncols);
     return fattn_mma_config(32, 1, 0, 0, 0, 0, 0, false);
-#endif // defined(AMPERE_MMA_AVAILABLE)
+#endif // defined(AMPERE_MMA_AVAILABLE) || defined(MUSA_WMMA_AVAILABLE)
 }
 
 static __host__ int ggml_cuda_fattn_mma_get_nthreads(const int DKQ, const int DV, const int ncols, const int cc) {
@@ -335,7 +335,7 @@ static constexpr __device__ int get_cols_per_thread() {
 }
 
 static __host__ int get_cols_per_warp(const int cc) {
-    if (turing_mma_available(cc) || amd_wmma_available(cc) || amd_mfma_available(cc)) {
+    if (turing_mma_available(cc) || amd_wmma_available(cc) || amd_mfma_available(cc) || musa_wmma_available(cc)) {
         return 16;
     } else {
         // Volta

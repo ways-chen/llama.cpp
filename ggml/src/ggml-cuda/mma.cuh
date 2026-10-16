@@ -23,7 +23,20 @@
 // However, the i indices in this file are by default permuted to simplify the index calculations.
 // #define GGML_CUDA_MMA_NO_VOLTA_PERM
 
-#if CUDART_VERSION >= 11080
+#if defined (MUSA_WMMA_AVAILABLE)
+
+static __device__ __forceinline__ int ggml_cuda_movmatrix(const int x) {
+    int ret = 0;
+
+    asm volatile(
+        ".mtx\n"
+        "tensor.mvwmma.m8n8.trans %0.u32, %1.u32;"
+        : "=R"(ret) : "R"(x));
+
+    return ret;
+}
+
+#elif CUDART_VERSION >= 11080
 
 static __device__ __forceinline__ int ggml_cuda_movmatrix(const int x) {
     int ret = 0;
@@ -223,6 +236,52 @@ namespace ggml_cuda_mma {
                 return -1;
             }
         }
+#elif defined(MUSA_WMMA_AVAILABLE)
+        static constexpr int ne = I * J / 32;
+        T x[ne] = {0};
+
+        static constexpr __device__ bool supported() {
+            if (I == 16 && J == 16) return true;
+            if (I == 16 && J == 8) return true;
+            if (I == 8 && J == 8) return true;
+            if (I == 16 && J == 4 && std::is_same_v<T, int>) return true;     // T == int
+            if (I == 8 && J == 4 && std::is_same_v<T, int>) return true;      // T == int
+            return false;
+        }
+
+        static __device__ __forceinline__ int get_i(const int l) {
+            if constexpr (I == 16 && J == 16){
+                return (threadIdx.x >> 2) * 2 + (l >> 2);
+            } else if constexpr (I == 16 && J == 8) {
+                return (threadIdx.x >> 2) * 2 + (l >> 1);
+            } else if constexpr (I == 8 && J == 8) {
+                return (threadIdx.x >> 2);
+            } else if constexpr (I == 16 && J == 4) {
+                return (threadIdx.x >> 2) * 2 + (l & 1);
+            } else if constexpr (I == 8 && J == 4) {
+                return (threadIdx.x >> 2);
+            } else {
+                NO_DEVICE_CODE;
+                return -1;
+            }
+        }
+
+        static __device__ __forceinline__ int get_j(const int l) {
+            if constexpr (I == 16 && J == 16) {
+                return (threadIdx.x & 3) * 4 + (l & 3);
+            } else if constexpr (I == 16 && J == 8) {
+                return (threadIdx.x & 3) * 2 + (l & 1);
+            } else if constexpr (I == 8 && J == 8) {
+                return (threadIdx.x & 3) * 2 + (l & 1);
+            } else if constexpr (I == 16 && J == 4) {
+                return (threadIdx.x & 3);
+            } else if constexpr (I == 8 && J == 4) {
+                return (threadIdx.x & 3);
+            } else {
+                NO_DEVICE_CODE;
+                return -1;
+            }
+        }
 #else
         static constexpr int ne = I * J / 32;
         T x[ne] = {0};
@@ -384,6 +443,43 @@ namespace ggml_cuda_mma {
                 return -1;
             }
         }
+#elif defined(MUSA_WMMA_AVAILABLE)
+        static constexpr int ne = I * J / 32;
+        half2 x[ne] = {{0.0f, 0.0f}};
+
+        static constexpr __device__ bool supported() {
+            if (I == 16 && J == 8) return true;
+            if (I == 8 && J == 8) return true;
+            if (I == 16 && J == 4) return true;   // get_half2
+            return false;
+        }
+
+        static __device__ __forceinline__ int get_i(const int l) {
+            if constexpr (I == 16 && J == 8) {
+                return (threadIdx.x >> 2) * 2 + (l >> 1);
+            } else if constexpr (I == 8 && J == 8) {
+                return (threadIdx.x >> 2);
+            } else if constexpr (I == 16 && J == 4) {
+                return (threadIdx.x >> 2) * 2 + (l & 1);
+            } else {
+                NO_DEVICE_CODE;
+                return -1;
+            }
+        }
+
+        static __device__ __forceinline__ int get_j(const int l) {
+            // TODO : unify get_j
+            if constexpr (I == 16 && J == 8) {
+                return (threadIdx.x & 3) * 2 + (l & 1);
+            } else if constexpr (I == 8 && J == 8) {
+                return (threadIdx.x & 3) * 2 + (l & 1);
+            } else if constexpr (I == 16 && J == 4) {
+                return (threadIdx.x & 3);
+            } else {
+                NO_DEVICE_CODE;
+                return -1;
+            }
+        }
 #else
         static constexpr int ne = I * J / WARP_SIZE;
         half2 x[ne] = {{0.0f, 0.0f}};
@@ -451,6 +547,21 @@ namespace ggml_cuda_mma {
             return tile<I_, J_, half2, DATA_LAYOUT_I_MAJOR>::get_j(l);
         }
 #elif defined(AMD_MFMA_AVAILABLE)
+        static constexpr int ne = tile<I_, J_, half2, DATA_LAYOUT_I_MAJOR>::ne;
+        nv_bfloat162 x[ne] = {{0.0f, 0.0f}};
+
+        static constexpr __device__ bool supported() {
+            return tile<I_, J_, half2, DATA_LAYOUT_I_MAJOR>::supported();
+        }
+
+        static __device__ __forceinline__ int get_i(const int l) {
+            return tile<I_, J_, half2, DATA_LAYOUT_I_MAJOR>::get_i(l);
+        }
+
+        static __device__ __forceinline__ int get_j(const int l) {
+            return tile<I_, J_, half2, DATA_LAYOUT_I_MAJOR>::get_j(l);
+        }
+#elif defined(MUSA_WMMA_AVAILABLE)
         static constexpr int ne = tile<I_, J_, half2, DATA_LAYOUT_I_MAJOR>::ne;
         nv_bfloat162 x[ne] = {{0.0f, 0.0f}};
 
@@ -756,6 +867,25 @@ namespace ggml_cuda_mma {
         NO_DEVICE_CODE;
         return tile<8, 8, half2>{};
     }
+#elif defined(MUSA_WMMA_AVAILABLE)
+    template <int I, int J>
+    static __device__ __forceinline__ tile<I, J/2, half2> get_half2(const tile<I, J, float> & tile_float) {
+        tile<I, J/2, half2> ret;
+        #pragma unroll
+        for (int l0 = 0; l0 < tile_float.ne; l0 += 2) {
+            ret.x[l0/2] = make_half2(tile_float.x[l0 + 0], tile_float.x[l0 + 1]);
+        }
+        return ret;
+    }
+
+    static __device__ __forceinline__ tile<8, 8, half2> get_transposed(const tile<16, 4, half2> & t) {
+        tile<8, 8, half2> ret;
+
+        ret.x[0] = ggml_cuda_movmatrix(t.x[0]);
+        ret.x[1] = ggml_cuda_movmatrix(t.x[1]);
+
+        return ret;
+    }
 #else // Volta
     template <int I, int J>
     static __device__ __forceinline__ tile<I, J/2, half2> get_half2(const tile<I, J, float> & tile_float) {
@@ -791,6 +921,8 @@ namespace ggml_cuda_mma {
         asm volatile("ldmatrix.sync.aligned.m8n8.x2.b16 {%0, %1}, [%2];"
             : "=r"(xi[0]), "=r"(xi[1])
             : "l"(xs));
+#elif defined(MUSA_WMMA_AVAILABLE)
+        load_generic(t, xs0, stride);
 #else
         GGML_UNUSED_VARS(t, xs0, stride);
         NO_DEVICE_CODE;
@@ -820,6 +952,8 @@ namespace ggml_cuda_mma {
 #elif defined(AMD_MFMA_AVAILABLE)
         static_assert(sizeof(t.x) == 4, "bad ne");
         ggml_cuda_memcpy_1<4>(t.x, xs0 + t.get_i(0)*stride + t.get_j(0));
+#elif defined(MUSA_WMMA_AVAILABLE)
+        load_generic(t, xs0, stride);
 #else
         GGML_UNUSED_VARS(t, xs0, stride);
         NO_DEVICE_CODE;
@@ -852,6 +986,8 @@ namespace ggml_cuda_mma {
 #elif defined(AMD_MFMA_AVAILABLE)
         static_assert(sizeof(t.x) == 8, "bad ne");
         ggml_cuda_memcpy_1<8>(t.x, xs0 + t.get_i(0)*stride + t.get_j(0));
+#elif defined(MUSA_WMMA_AVAILABLE)
+        load_generic(t, xs0, stride);
 #else
         GGML_UNUSED_VARS(t, xs0, stride);
         NO_DEVICE_CODE;
@@ -911,6 +1047,16 @@ namespace ggml_cuda_mma {
                 xh[2*l + 1] = ((const half *) xs0)[(2*t.get_j(l) + 1)*(2*stride) + t.get_i(l)];
             }
         }
+#elif defined(MUSA_WMMA_AVAILABLE)
+        static_assert(I == 16, "bad tile width");
+        static_assert(dl == DATA_LAYOUT_I_MAJOR, "bad data layout");
+        static_assert(std::is_same_v<T, half2>, "bad data type");
+        half * xh = (half *) t.x;
+#pragma unroll
+        for (int l = 0; l < t.ne; ++l) {
+            xh[2*l + 0] = ((const half *) xs0)[(2*t.get_j(l) + 0)*(2*stride) + t.get_i(l)];
+            xh[2*l + 1] = ((const half *) xs0)[(2*t.get_j(l) + 1)*(2*stride) + t.get_i(l)];
+        }
 #else
         GGML_UNUSED_VARS(t, xs0, stride);
         NO_DEVICE_CODE;
@@ -933,6 +1079,13 @@ namespace ggml_cuda_mma {
             : "+r"(D.x[2]), "+r"(D.x[3])
             : "r"(A.x[1]), "r"(B.x[0]));
 #endif // __CUDA_ARCH__ >= GGML_CUDA_CC_AMPERE
+#elif defined(MUSA_WMMA_AVAILABLE)
+        asm volatile(
+            ".mtx\n"
+            "tensor.wmma.m16n8k16.row.col.s32.s8.s8"
+            "{%0,%1,%2,%3}.b32, {%4,%5}.b32, {%6}.b32, {%0,%1,%2,%3}.b32;"
+            : "+R"(D.x[0]), "+R"(D.x[1]), "+R"(D.x[2]), "+R"(D.x[3])
+            : "R"(A.x[0]), "R"(A.x[1]), "R"(B.x[0]));
 #else
         GGML_UNUSED_VARS(D, A, B);
         NO_DEVICE_CODE;
@@ -961,6 +1114,14 @@ namespace ggml_cuda_mma {
             : "+r"(D.x[2]), "+r"(D.x[3])
             : "r"(A.x[3]), "r"(B.x[1]));
 #endif // __CUDA_ARCH__ >= GGML_CUDA_CC_AMPERE
+#elif defined(MUSA_WMMA_AVAILABLE)
+        asm volatile(
+            ".mtx\n"
+            "tensor.wmma.m16n8k32.row.col.s32.s8.s8"
+            "{%0,%1,%2,%3}.b32, {%4,%5,%6,%7}.b32, {%8,%9}.b32, {%0,%1,%2,%3}.b32;"
+            : "+R"(D.x[0]), "+R"(D.x[1]), "+R"(D.x[2]), "+R"(D.x[3])
+            : "R"(A.x[0]), "R"(A.x[1]), "R"(A.x[2]), "R"(A.x[3]),
+              "R"(B.x[0]), "R"(B.x[1]));
 #else
         GGML_UNUSED_VARS(D, A, B);
         NO_DEVICE_CODE;
@@ -986,6 +1147,18 @@ namespace ggml_cuda_mma {
             : "+r"(Dxi[0]), "+r"(Dxi[1])
             : "r"(Axi[2]), "r"(Axi[3]), "r"(Bxi[1]));
 #endif // __CUDA_ARCH__ >= GGML_CUDA_CC_AMPERE
+#elif defined(MUSA_WMMA_AVAILABLE)
+        const int * Axi = (const int *) A.x;
+        const int * Bxi = (const int *) B.x;
+        int       * Dxi = (int       *) D.x;
+
+        asm volatile(
+            ".mtx\n"
+            "tensor.wmma.m16n8k16.row.col.f16.f16.f16"
+            "{%0,%1}.b32, {%2,%3,%4,%5}.b32, {%6,%7}.b32, {%0,%1}.b32;"
+            : "+R"(Dxi[0]), "+R"(Dxi[1])
+            : "R"(Axi[0]), "R"(Axi[1]), "R"(Axi[2]), "R"(Axi[3]),
+              "R"(Bxi[0]), "R"(Bxi[1]));
 #else
         GGML_UNUSED_VARS(D, A, B);
         NO_DEVICE_CODE;
@@ -1059,6 +1232,18 @@ namespace ggml_cuda_mma {
             }
             reinterpret_cast<halfx4_t&>(D.x[0]) = result_h;
         }
+#elif defined(MUSA_WMMA_AVAILABLE)
+        const int * Axi = (const int *) A.x;
+        const int * Bxi = (const int *) B.x;
+        int       * Dxi = (int       *) D.x;
+
+        asm volatile(
+            ".mtx\n"
+            "tensor.wmma.m16n16k16.row.col.f16.f16.f16"
+            "{%0,%1,%2,%3}.b32, {%4,%5,%6,%7}.b32, {%8,%9,%10,%11}.b32, {%0,%1,%2,%3}.b32;"
+            : "+R"(Dxi[0]), "+R"(Dxi[1]), "+R"(Dxi[2]), "+R"(Dxi[3])
+            : "R"(Axi[0]), "R"(Axi[1]), "R"(Axi[2]), "R"(Axi[3]),
+              "R"(Bxi[0]), "R"(Bxi[1]), "R"(Bxi[2]), "R"(Bxi[3]));
 #else
         GGML_UNUSED_VARS(D, A, B);
         NO_DEVICE_CODE;
@@ -1089,6 +1274,18 @@ namespace ggml_cuda_mma {
         asm("mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32 {%0, %1, %2, %3}, {%4, %5, %6, %7}, {%8, %9}, {%0, %1, %2, %3};"
             : "+r"(Dxi[0]), "+r"(Dxi[1]), "+r"(Dxi[2]), "+r"(Dxi[3])
             : "r"(Axi[0]), "r"(Axi[1]), "r"(Axi[2]), "r"(Axi[3]), "r"(Bxi[0]), "r"(Bxi[1]));
+#elif defined(MUSA_WMMA_AVAILABLE)
+        const int * Axi = (const int *) A.x;
+        const int * Bxi = (const int *) B.x;
+        int       * Dxi = (int       *) D.x;
+
+        asm volatile(
+            ".mtx\n"
+            "tensor.wmma.m16n8k8.row.col.f32.tf32.tf32"
+            "{%0,%1,%2,%3}.b32, {%4,%5,%6,%7}.b32, {%8,%9}.b32, {%0,%1,%2,%3}.b32;"
+            : "+R"(Dxi[0]), "+R"(Dxi[1]), "+R"(Dxi[2]), "+R"(Dxi[3])
+            : "R"(Axi[0]), "R"(Axi[1]), "R"(Axi[2]), "R"(Axi[3]),
+              "R"(Bxi[0]), "R"(Bxi[1]));
 #else
         GGML_UNUSED_VARS(D, A, B);
         NO_DEVICE_CODE;
@@ -1148,6 +1345,29 @@ namespace ggml_cuda_mma {
                 : "+f"(Dxi[0]), "+f"(Dxi[1]), "+f"(Dxi[2]), "+f"(Dxi[3])
                 : "r"(Axi[0]), "r"(Axi[1]), "r"(Axi[2]), "r"(Axi[3]), "r"(Bxi[0]), "r"(Bxi[1]), "r"(a_scale), "r"(b_scale));
         }
+#elif defined(MUSA_WMMA_AVAILABLE)
+        const int * Axi = (const int *) A.x;
+        const int * Bxi = (const int *) B.x;
+        int       * Dxi = (int       *) D.x;
+
+        // TODO : support fp4 with scale
+        if constexpr (type == GGML_TYPE_MXFP4) {
+            asm volatile(
+                ".mtx\n"
+                "tensor.wmma.m16n8k64.row.col.f32.mxf4.mxf4"
+                "{%0,%1,%2,%3}.b32, {%4,%5,%6,%7}.b32, {%8,%9}.b32, {%0,%1,%2,%3}.b32;"
+                : "+R"(Dxi[0]), "+R"(Dxi[1]), "+R"(Dxi[2]), "+R"(Dxi[3])
+                : "R"(Axi[0]), "R"(Axi[1]), "R"(Axi[2]), "R"(Axi[3]),
+                    "R"(Bxi[0]), "R"(Bxi[1]));
+        } else {
+            asm volatile(
+                ".mtx\n"
+                "tensor.wmma.m16n8k64.row.col.f32.mtf4.mtf4"
+                "{%0,%1,%2,%3}.b32, {%4,%5,%6,%7}.b32, {%8,%9}.b32, {%0,%1,%2,%3}.b32;"
+                : "+R"(Dxi[0]), "+R"(Dxi[1]), "+R"(Dxi[2]), "+R"(Dxi[3])
+                : "R"(Axi[0]), "R"(Axi[1]), "R"(Axi[2]), "R"(Axi[3]),
+                    "R"(Bxi[0]), "R"(Bxi[1]));
+        }
 #else
         GGML_UNUSED_VARS(D, A, B, a_scale, b_scale);
 #endif // BLACKWELL_MMA_AVAILABLE
@@ -1172,6 +1392,18 @@ namespace ggml_cuda_mma {
             : "+r"(Dxi[0]), "+r"(Dxi[1]), "+r"(Dxi[2]), "+r"(Dxi[3])
             : "r"(Axi[2]), "r"(Axi[3]), "r"(Bxi[1]));
 #endif // __CUDA_ARCH__ >= GGML_CUDA_CC_AMPERE
+#elif defined(MUSA_WMMA_AVAILABLE)
+        const int * Axi = (const int *) A.x;
+        const int * Bxi = (const int *) B.x;
+        int       * Dxi = (int       *) D.x;
+
+        asm volatile(
+            ".mtx\n"
+            "tensor.wmma.m16n8k16.row.col.f32.f16.f16"
+            "{%0,%1,%2,%3}.b32, {%4,%5,%6,%7}.b32, {%8,%9}.b32, {%0,%1,%2,%3}.b32;"
+            : "+R"(Dxi[0]), "+R"(Dxi[1]), "+R"(Dxi[2]), "+R"(Dxi[3])
+            : "R"(Axi[0]), "R"(Axi[1]), "R"(Axi[2]), "R"(Axi[3]),
+                "R"(Bxi[0]), "R"(Bxi[1]));
 #else
         GGML_UNUSED_VARS(D, A, B);
         NO_DEVICE_CODE;
@@ -1187,6 +1419,18 @@ namespace ggml_cuda_mma {
         asm("mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 {%0, %1, %2, %3}, {%4, %5, %6, %7}, {%8, %9}, {%0, %1, %2, %3};"
             : "+r"(Dxi[0]), "+r"(Dxi[1]), "+r"(Dxi[2]), "+r"(Dxi[3])
             : "r"(Axi[0]), "r"(Axi[1]), "r"(Axi[2]), "r"(Axi[3]), "r"(Bxi[0]), "r"(Bxi[1]));
+#elif defined(MUSA_WMMA_AVAILABLE)
+        const int * Axi = (const int *) A.x;
+        const int * Bxi = (const int *) B.x;
+        int       * Dxi = (int       *) D.x;
+
+        asm volatile(
+            ".mtx\n"
+            "tensor.wmma.m16n8k16.row.col.f32.bf16.bf16"
+            "{%0,%1,%2,%3}.b32, {%4,%5,%6,%7}.b32, {%8,%9}.b32, {%0,%1,%2,%3}.b32;"
+            : "+R"(Dxi[0]), "+R"(Dxi[1]), "+R"(Dxi[2]), "+R"(Dxi[3])
+            : "R"(Axi[0]), "R"(Axi[1]), "R"(Axi[2]), "R"(Axi[3]),
+              "R"(Bxi[0]), "R"(Bxi[1]));
 #else
         GGML_UNUSED_VARS(D, A, B);
         NO_DEVICE_CODE;
@@ -1248,6 +1492,20 @@ namespace ggml_cuda_mma {
         const halfx4_t& a_frag = reinterpret_cast<const halfx4_t&>(A.x[0]);
         const halfx4_t& b_frag = reinterpret_cast<const halfx4_t&>(B.x[0]);
         acc_frag = __builtin_amdgcn_mfma_f32_16x16x16f16(a_frag, b_frag, acc_frag, 0, 0, 0);
+#elif defined(MUSA_WMMA_AVAILABLE)
+        const int * Axi = (const int *) A.x;
+        const int * Bxi = (const int *) B.x;
+        int       * Dxi = (int       *) D.x;
+
+        asm volatile(
+            ".mtx\n"
+            "tensor.wmma.m16n16k16.row.col.f32.f16.f16"
+            "{%0,%1,%2,%3,%4,%5,%6,%7}.b32, {%8,%9,%10,%11}.b32, "
+            "{%12,%13,%14,%15}.b32, "
+            "{%0,%1,%2,%3,%4,%5,%6,%7}.b32;"
+            : "+R"(Dxi[0]), "+R"(Dxi[1]), "+R"(Dxi[2]), "+R"(Dxi[3]), "+R"(Dxi[4]), "+R"(Dxi[5]), "+R"(Dxi[6]), "+R"(Dxi[7])
+            : "R"(Axi[0]), "R"(Axi[1]), "R"(Axi[2]), "R"(Axi[3]),
+              "R"(Bxi[0]), "R"(Bxi[1]), "R"(Bxi[2]), "R"(Bxi[3]));
 #else
         GGML_UNUSED_VARS(D, A, B);
         NO_DEVICE_CODE;
@@ -1296,6 +1554,20 @@ namespace ggml_cuda_mma {
         GGML_UNUSED_VARS(D, A, B);
         NO_DEVICE_CODE;
 #endif // defined(CDNA3) || defined(CDNA2)
+#elif defined(MUSA_WMMA_AVAILABLE)
+        const int * Axi = (const int *) A.x;
+        const int * Bxi = (const int *) B.x;
+        int       * Dxi = (int       *) D.x;
+
+        asm volatile(
+            ".mtx\n"
+            "tensor.wmma.m16n16k16.row.col.f32.bf16.bf16"
+            "{%0,%1,%2,%3,%4,%5,%6,%7}.b32, {%8,%9,%10,%11}.b32, "
+            "{%12,%13,%14,%15}.b32, "
+            "{%0,%1,%2,%3,%4,%5,%6,%7}.b32;"
+            : "+R"(Dxi[0]), "+R"(Dxi[1]), "+R"(Dxi[2]), "+R"(Dxi[3]), "+R"(Dxi[4]), "+R"(Dxi[5]), "+R"(Dxi[6]), "+R"(Dxi[7])
+            : "R"(Axi[0]), "R"(Axi[1]), "R"(Axi[2]), "R"(Axi[3]),
+              "R"(Bxi[0]), "R"(Bxi[1]), "R"(Bxi[2]), "R"(Bxi[3]));
 #else
         GGML_UNUSED_VARS(D, A, B);
         NO_DEVICE_CODE;

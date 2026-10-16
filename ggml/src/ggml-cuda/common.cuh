@@ -101,11 +101,13 @@
 #define GGML_CUDA_CC_QY1 (GGML_CUDA_CC_OFFSET_MTHREADS + 0x210) // MTT S80, MTT S3000
 #define GGML_CUDA_CC_QY2 (GGML_CUDA_CC_OFFSET_MTHREADS + 0x220) // MTT S4000
 #define GGML_CUDA_CC_PH1 (GGML_CUDA_CC_OFFSET_MTHREADS + 0x310) // MTT S5000
+#define GGML_CUDA_CC_LS  (GGML_CUDA_CC_OFFSET_MTHREADS + 0x420)
 
 #define GGML_CUDA_CC_IS_MTHREADS(cc) (cc >= GGML_CUDA_CC_OFFSET_MTHREADS && cc < GGML_CUDA_CC_OFFSET_AMD)
 #define GGML_CUDA_CC_IS_QY1(cc)      (cc >= GGML_CUDA_CC_QY1 && cc < GGML_CUDA_CC_QY2)
 #define GGML_CUDA_CC_IS_QY2(cc)      (cc >= GGML_CUDA_CC_QY2 && cc < GGML_CUDA_CC_PH1)
 #define GGML_CUDA_CC_IS_PH1(cc)      (cc >= GGML_CUDA_CC_PH1)
+#define GGML_CUDA_CC_IS_LS(cc)       (cc >= GGML_CUDA_CC_LS)
 
 #if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA) && CUDART_VERSION >= 11070
 #    define GGML_CUDA_USE_CUB
@@ -368,6 +370,10 @@ static bool cp_async_available(const int cc) {
 static bool blackwell_mma_available(const int cc) {
     return GGML_CUDA_CC_IS_NVIDIA(cc) && ggml_cuda_highest_compiled_arch(cc) >= GGML_CUDA_CC_BLACKWELL &&
            ggml_cuda_highest_compiled_arch(cc) < GGML_CUDA_CC_RUBIN;
+}
+
+static bool musa_wmma_available(const int cc) {
+    return GGML_CUDA_CC_IS_MTHREADS(cc) && GGML_CUDA_CC_IS_PH1(cc);
 }
 
 static constexpr __device__ int ggml_cuda_get_physical_warp_size() {

@@ -186,18 +186,18 @@ struct ggml_cuda_mmq_config {
 
     // TODO transition all combinations of GPUs and quantizations to the MMA data layout.
     __host__ int use_mma_data_layout(const int cc) const {
-        if (amd_mfma_available(cc) || amd_wmma_available(cc) || turing_mma_available(cc)) {
+        if (amd_mfma_available(cc) || amd_wmma_available(cc) || turing_mma_available(cc) || musa_wmma_available(cc)) {
             return true;
         }
         return false;
     }
 
     constexpr __device__ bool use_mma_data_layout() const {
-#if defined(AMD_MFMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE)
+#if defined(AMD_MFMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(MUSA_WMMA_AVAILABLE)
         return true;
 #else
         return false;
-#endif // defined(AMD_MFMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE)
+#endif // defined(AMD_MFMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(MUSA_WMMA_AVAILABLE)
     }
 
 };
