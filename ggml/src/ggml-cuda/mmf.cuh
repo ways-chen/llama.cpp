@@ -54,7 +54,7 @@ static __global__ void mul_mat_f(
         const int channel_ratio, const int stride_channel_x, const int stride_channel_y, const int stride_channel_dst,
         const int sample_ratio, const int stride_sample_x, const int stride_sample_y, const int stride_sample_dst) {
 // TODO: handle this in a consistent and simpler way after AMD MFMA support has been added
-#if defined(VOLTA_MMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE) || defined(AMD_MFMA_AVAILABLE)
+#if defined(VOLTA_MMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE) || defined(AMD_MFMA_AVAILABLE) || defined(MUSA_WMMA_AVAILABLE)
 #if defined(AMD_WMMA_AVAILABLE)
     if constexpr (!(std::is_same_v<T, half2> || std::is_same_v<T, nv_bfloat162>) || rows_per_block != MMF_ROWS_PER_BLOCK) {NO_DEVICE_CODE;} else {
     typedef tile<16, 8,  T,     get_input_data_layout()> tile_A;
@@ -65,6 +65,11 @@ static __global__ void mul_mat_f(
     typedef tile<16, 8,  T,     DATA_LAYOUT_I_MAJOR> tile_A;
     typedef tile<16, 8,  T,     DATA_LAYOUT_I_MAJOR> tile_B;
     typedef tile<16, 16, float, DATA_LAYOUT_J_MAJOR> tile_C;
+#elif defined(MUSA_WMMA_AVAILABLE)
+    if constexpr (rows_per_block != MMF_ROWS_PER_BLOCK) {NO_DEVICE_CODE;} else {
+    typedef tile<16, 8, T>     tile_A;
+    typedef tile<8, 8,  T>     tile_B;
+    typedef tile<16, 8, float> tile_C;
 #else
 #ifdef VOLTA_MMA_AVAILABLE
     if constexpr (!std::is_same_v<T, half2> || rows_per_block != MMF_ROWS_PER_BLOCK) {NO_DEVICE_CODE;} else {
@@ -229,6 +234,8 @@ static __global__ void mul_mat_f(
 
     if (nwarps > 1) {
         __syncthreads();
+    } else {
+        __syncwarp();
     }
 #pragma unroll
     for (int itB = 0; itB < ntB; ++itB) {
@@ -305,7 +312,7 @@ static __global__ void mul_mat_f_ids(
         const int sample_ratio, const int stride_sample_x, const int stride_sample_y, const int stride_sample_dst,
         const uint3 sis1_fd, const uint3 nch_fd) {
 // TODO: handle this in a consistent and simpler way after AMD MFMA support has been added
-#if defined(VOLTA_MMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE) || defined(AMD_MFMA_AVAILABLE)
+#if defined(VOLTA_MMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE) || defined(AMD_MFMA_AVAILABLE) || defined(MUSA_WMMA_AVAILABLE)
 #if defined(AMD_WMMA_AVAILABLE)
     if constexpr (!(std::is_same_v<T, half2> || std::is_same_v<T, nv_bfloat162>) || rows_per_block != MMF_ROWS_PER_BLOCK) {NO_DEVICE_CODE;} else {
     typedef tile<16, 8,  T,     get_input_data_layout()> tile_A;
@@ -316,6 +323,11 @@ static __global__ void mul_mat_f_ids(
     typedef tile<16, 8,  T,     DATA_LAYOUT_I_MAJOR> tile_A;
     typedef tile<16, 8,  T,     DATA_LAYOUT_I_MAJOR> tile_B;
     typedef tile<16, 16, float, DATA_LAYOUT_J_MAJOR> tile_C;
+#elif defined(MUSA_WMMA_AVAILABLE)
+    if constexpr (rows_per_block != MMF_ROWS_PER_BLOCK) {NO_DEVICE_CODE;} else {
+    typedef tile<16, 8, T>     tile_A;
+    typedef tile<8, 8,  T>     tile_B;
+    typedef tile<16, 8, float> tile_C;
 #else
 #ifdef VOLTA_MMA_AVAILABLE
     if constexpr (!std::is_same_v<T, half2> || rows_per_block != MMF_ROWS_PER_BLOCK) {NO_DEVICE_CODE;} else {
@@ -507,6 +519,8 @@ static __global__ void mul_mat_f_ids(
 
     if (nwarps > 1) {
         __syncthreads();
+    } else {
+        __syncwarp();
     }
 #pragma unroll
     for (int itB = 0; itB < ntB; ++itB) {

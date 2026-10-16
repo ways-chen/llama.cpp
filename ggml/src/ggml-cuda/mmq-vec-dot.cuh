@@ -530,7 +530,7 @@ template <ggml_type type, int J, bool fallback> static __device__ __forceinline_
             }
         }
     }
-#elif defined(TURING_MMA_AVAILABLE)
+#elif defined(TURING_MMA_AVAILABLE) || defined(MUSA_WMMA_AVAILABLE)
 
     typedef tile<16, 4, int> tile_A;
     typedef tile<16, 8, int> tile_A_8;
@@ -559,8 +559,12 @@ template <ggml_type type, int J, bool fallback> static __device__ __forceinline_
 #pragma unroll
         for (int k01 = 0; k01 < MMQ_TILE_NE_K; k01 += 8) {
             const int k0 = k00 + k01;
-
+#if defined(MUSA_WMMA_AVAILABLE)
+            load_ldmatrix(A[n][2 * (k01 / QI8_1) + 0], x_qs + (i0 + n * tile_A::I) * sram_stride + k0 + 0, sram_stride);
+            load_ldmatrix(A[n][2 * (k01 / QI8_1) + 1], x_qs + (i0 + n * tile_A::I) * sram_stride + k0 + tile_A::J, sram_stride);
+#else
             load_ldmatrix(((tile_A_8 *) A[n])[k01/8], x_qs + (i0 + n*tile_A::I)*sram_stride + k0, sram_stride);
+#endif
         }
 
 #pragma unroll
@@ -749,7 +753,7 @@ template <ggml_type type, int J, bool fallback> static __device__ __forceinline_
             }
         }
     }
-#elif defined(TURING_MMA_AVAILABLE)
+#elif defined(TURING_MMA_AVAILABLE) || defined(MUSA_WMMA_AVAILABLE)
 
     typedef tile<16, 4, int> tile_A;
     typedef tile<16, 8, int> tile_A_8;
@@ -779,8 +783,12 @@ template <ggml_type type, int J, bool fallback> static __device__ __forceinline_
 #pragma unroll
         for (int k01 = 0; k01 < MMQ_TILE_NE_K; k01 += QI8_1) {
             const int k0 = k00 + k01;
-
+#if defined(MUSA_WMMA_AVAILABLE)
+            load_ldmatrix(A[n][2 * (k01 / QI8_1) + 0], x_qs + (i0 + n * tile_A::I) * sram_stride + k0 + 0, sram_stride);
+            load_ldmatrix(A[n][2 * (k01 / QI8_1) + 1], x_qs + (i0 + n * tile_A::I) * sram_stride + k0 + tile_A::J, sram_stride);
+#else
             load_ldmatrix(((tile_A_8 *) A[n])[k01/QI8_1], x_qs + (i0 + n*tile_A::I)*sram_stride + k0, sram_stride);
+#endif
         }
     }
 
@@ -1069,7 +1077,7 @@ template <ggml_type type, int J, bool fallback> static __device__ __forceinline_
             }
         }
     }
-#elif defined(TURING_MMA_AVAILABLE)
+#elif defined(TURING_MMA_AVAILABLE) || defined(MUSA_WMMA_AVAILABLE)
 
     typedef tile<16, 4, int> tile_A;
     typedef tile< 8, 4, int> tile_B;
