@@ -106,7 +106,7 @@
 #define GGML_CUDA_CC_IS_MTHREADS(cc) (cc >= GGML_CUDA_CC_OFFSET_MTHREADS && cc < GGML_CUDA_CC_OFFSET_AMD)
 #define GGML_CUDA_CC_IS_QY1(cc)      (cc >= GGML_CUDA_CC_QY1 && cc < GGML_CUDA_CC_QY2)
 #define GGML_CUDA_CC_IS_QY2(cc)      (cc >= GGML_CUDA_CC_QY2 && cc < GGML_CUDA_CC_PH1)
-#define GGML_CUDA_CC_IS_PH1(cc)      (cc >= GGML_CUDA_CC_PH1)
+#define GGML_CUDA_CC_IS_PH1(cc)      (cc >= GGML_CUDA_CC_PH1 && cc < GGML_CUDA_CC_LS)
 #define GGML_CUDA_CC_IS_LS(cc)       (cc >= GGML_CUDA_CC_LS)
 
 #if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA) && CUDART_VERSION >= 11070
@@ -293,9 +293,9 @@ static const char * cu_get_error_str(CUresult err) {
 #define CP_ASYNC_AVAILABLE
 #endif // !defined(GGML_USE_HIP) && __CUDA_ARCH__ >= GGML_CUDA_CC_AMPERE
 
-#if defined(GGML_USE_MUSA) && (__MUSA_ARCH__ >= 310)
+#if defined(GGML_USE_MUSA) && (__MUSA_ARCH__ >= 420)
 #define MUSA_WMMA_AVAILABLE
-#endif // defined(GGML_USE_MUSA) && (__MUSA_ARCH__ >= 310)
+#endif // defined(GGML_USE_MUSA) && (__MUSA_ARCH__ >= 420)
 
 #if defined(GGML_USE_MUSA) && (__MUSA_ARCH__ < 220) && !defined(GGML_MUSA_WMMA_FATTN)
 #define GGML_MUSA_NO_FA
@@ -373,7 +373,7 @@ static bool blackwell_mma_available(const int cc) {
 }
 
 static bool musa_wmma_available(const int cc) {
-    return GGML_CUDA_CC_IS_MTHREADS(cc) && GGML_CUDA_CC_IS_PH1(cc);
+    return GGML_CUDA_CC_IS_MTHREADS(cc) && GGML_CUDA_CC_IS_LS(cc);
 }
 
 static constexpr __device__ int ggml_cuda_get_physical_warp_size() {
