@@ -23,20 +23,7 @@
 // However, the i indices in this file are by default permuted to simplify the index calculations.
 // #define GGML_CUDA_MMA_NO_VOLTA_PERM
 
-#if defined (MUSA_WMMA_AVAILABLE)
-
-static __device__ __forceinline__ int ggml_cuda_movmatrix(const int x) {
-    int ret = 0;
-
-    asm volatile(
-        ".mtx\n"
-        "tensor.mvwmma.m8n8.trans %0.u32, %1.u32;"
-        : "=R"(ret) : "R"(x));
-
-    return ret;
-}
-
-#elif CUDART_VERSION >= 11080
+#if CUDART_VERSION >= 11080
 
 static __device__ __forceinline__ int ggml_cuda_movmatrix(const int x) {
     int ret = 0;
@@ -881,8 +868,18 @@ namespace ggml_cuda_mma {
     static __device__ __forceinline__ tile<8, 8, half2> get_transposed(const tile<16, 4, half2> & t) {
         tile<8, 8, half2> ret;
 
-        ret.x[0] = ggml_cuda_movmatrix(t.x[0]);
-        ret.x[1] = ggml_cuda_movmatrix(t.x[1]);
+        const int * Srci = (const int *) t.x;
+        int       * Dsti = (int       *) ret.x;
+
+        asm volatile(
+            ".mtx\n"
+            ".reg .v2 .u32 s;\n"
+            ".reg .v2 .u32 d;\n"
+            "mov1 s.u32x2, {%2.u32, %3.u32};\n"
+            "tensor.mvwmma.m16n8.trans.b16 d.u32, s.u32;\n"
+            "mov1 {%0.u32, %1.u32}, d.u32x2;\n"
+            : "=R"(Dsti[0]), "=R"(Dsti[1])
+            : "R"(Srci[0]), "R"(Srci[1]));
 
         return ret;
     }
@@ -1350,23 +1347,22 @@ namespace ggml_cuda_mma {
         const int * Bxi = (const int *) B.x;
         int       * Dxi = (int       *) D.x;
 
-        // TODO : support fp4 with scale
         if constexpr (type == GGML_TYPE_MXFP4) {
             asm volatile(
                 ".mtx\n"
-                "tensor.wmma.m16n8k64.row.col.f32.mxf4.mxf4"
-                "{%0,%1,%2,%3}.b32, {%4,%5,%6,%7}.b32, {%8,%9}.b32, {%0,%1,%2,%3}.b32;"
+                "tensor.wmma.m16n8k64.row.col.f32.mxf4.mxf4.scale"
+                "{%0,%1,%2,%3}.b32, {%4,%5,%6,%7}.b32, {%8,%9}.b32, {%0,%1,%2,%3}.b32, %10.u32, %11.u32, 32;"
                 : "+R"(Dxi[0]), "+R"(Dxi[1]), "+R"(Dxi[2]), "+R"(Dxi[3])
                 : "R"(Axi[0]), "R"(Axi[1]), "R"(Axi[2]), "R"(Axi[3]),
-                    "R"(Bxi[0]), "R"(Bxi[1]));
+                    "R"(Bxi[0]), "R"(Bxi[1]), "R"(a_scale), "R"(b_scale));
         } else {
             asm volatile(
                 ".mtx\n"
-                "tensor.wmma.m16n8k64.row.col.f32.mtf4.mtf4"
-                "{%0,%1,%2,%3}.b32, {%4,%5,%6,%7}.b32, {%8,%9}.b32, {%0,%1,%2,%3}.b32;"
+                "tensor.wmma.m16n8k64.row.col.f32.mtf4.mtf4.scale"
+                "{%0,%1,%2,%3}.b32, {%4,%5,%6,%7}.b32, {%8,%9}.b32, {%0,%1,%2,%3}.b32, %10.u32, %11.u32, 16;"
                 : "+R"(Dxi[0]), "+R"(Dxi[1]), "+R"(Dxi[2]), "+R"(Dxi[3])
                 : "R"(Axi[0]), "R"(Axi[1]), "R"(Axi[2]), "R"(Axi[3]),
-                    "R"(Bxi[0]), "R"(Bxi[1]));
+                    "R"(Bxi[0]), "R"(Bxi[1]), "R"(a_scale), "R"(b_scale));
         }
 #else
         GGML_UNUSED_VARS(D, A, B, a_scale, b_scale);

@@ -5133,7 +5133,7 @@ static ggml_backend_feature * ggml_backend_cuda_get_features(ggml_backend_reg_t 
     {
         const auto & info = ggml_cuda_info();
         for (int id = 0; id < info.device_count; ++id) {
-            if (blackwell_mma_available(info.devices[id].cc)) {
+            if (blackwell_mma_available(info.devices[id].cc) || musa_wmma_available(info.devices[id].cc)) {
                 features.push_back({ "BLACKWELL_NATIVE_FP4", "1"});
                 break;
             }

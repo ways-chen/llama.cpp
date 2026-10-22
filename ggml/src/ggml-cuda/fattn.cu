@@ -12,7 +12,7 @@ static void ggml_cuda_flash_attn_ext_mma_f16_switch_ncols1(ggml_backend_cuda_con
     const ggml_tensor * Q = dst->src[0];
 
     if constexpr (ncols2 <= 8) {
-        if (turing_mma_available(cc) && Q->ne[1] <= 8/ncols2) {
+        if ((turing_mma_available(cc) || musa_wmma_available(cc)) && Q->ne[1] <= 8/ncols2) {
             ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, 8/ncols2, ncols2>(ctx, dst);
             return;
         }
@@ -481,6 +481,15 @@ static best_fattn_kernel ggml_cuda_get_best_fattn_kernel(const int device, const
                 return BEST_FATTN_KERNEL_VEC;
             }
         }
+        return BEST_FATTN_KERNEL_MMA_F16;
+    }
+
+    if (musa_wmma_available(cc) && Q->ne[0] != 40 && Q->ne[0] != 72)
+    {
+        if (can_use_vector_kernel && Q->ne[1] == 1) {
+            return BEST_FATTN_KERNEL_VEC;
+        }
+
         return BEST_FATTN_KERNEL_MMA_F16;
     }
 

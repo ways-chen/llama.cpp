@@ -81,7 +81,7 @@ static __global__ void quantize_mmq_nvfp4(
         const float * __restrict__ x, const int32_t * __restrict__ ids, void * __restrict__ vy,
         const int64_t ne00, const int64_t s01, const int64_t s02, const int64_t s03,
         const int64_t ne0, const int64_t ne1, const int64_t ne2, const int n_expert_used) {
-#if defined(BLACKWELL_MMA_AVAILABLE)
+#if defined(BLACKWELL_MMA_AVAILABLE) || defined(MUSA_WMMA_AVAILABLE)
 
     const int64_t i0_base = ((int64_t) blockDim.x * blockIdx.y + threadIdx.x) * QK_NVFP4_SUB;
     if (i0_base >= ne0) {
@@ -184,7 +184,7 @@ static __global__ void quantize_mmq_nvfp4(
 #else
     GGML_UNUSED(n_expert_used);
     NO_DEVICE_CODE; // This is for Blackwell NVFP4 activations only.
-#endif // defined(BLACKWELL_MMA_AVAILABLE)
+#endif // defined(BLACKWELL_MMA_AVAILABLE) || defined(MUSA_WMMA_AVAILABLE)
 
 }
 
