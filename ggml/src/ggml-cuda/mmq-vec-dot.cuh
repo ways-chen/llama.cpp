@@ -1213,8 +1213,13 @@ template <ggml_type type, int J, bool fallback> static __device__ __forceinline_
 
     // 2 threads per quad supply the packed scale register to the block_scale MMA,
     // see https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-block-scaling
+#if defined(MUSA_WMMA_AVAILABLE)
+    const int tidx_A = threadIdx.x % 16;
+    const int tidx_B = threadIdx.x % 8;
+#else
     const int tidx_A = threadIdx.x / 4 + (threadIdx.x % 2) * 8;
     const int tidx_B = threadIdx.x / 4;
+#endif
     const int i0     = (threadIdx.y / ntx) * rows_per_warp;
 
     tile_A   A[ntx][nfrags];
