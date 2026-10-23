@@ -220,6 +220,8 @@ struct ggml_cuda_mmq_config {
 #include "mmq-config-rdna2.cuh"
 #include "mmq-config-rdna4.cuh"
 
+#include "mmq-config-musa.cuh"
+
 #undef CASE
 
 static __host__ ggml_cuda_mmq_config ggml_cuda_mmq_get_config(const ggml_type type, const int J, const bool fallback, const int cc) {
@@ -232,12 +234,16 @@ static __host__ ggml_cuda_mmq_config ggml_cuda_mmq_get_config(const ggml_type ty
         }
         return ggml_cuda_mmq_get_config_rdna2(type, J, fallback);
     }
-    if (blackwell_mma_available(cc) || GGML_CUDA_CC_IS_LS(cc)) {
+    if (musa_wmma_available(cc)) {
+        return ggml_cuda_mmq_get_config_musa(type, J, fallback);
+    }
+    if (blackwell_mma_available(cc)) {
         return ggml_cuda_mmq_get_config_blackwell(type, J, fallback);
     }
-    if ((ggml_cuda_highest_compiled_arch(cc) >= GGML_CUDA_CC_VOLTA)) {
+    if (ggml_cuda_highest_compiled_arch(cc) >= GGML_CUDA_CC_VOLTA) {
         return ggml_cuda_mmq_get_config_ampere(type, J, fallback);
     }
+
     return ggml_cuda_mmq_get_config_pascal(type, J, fallback);
 }
 
@@ -250,8 +256,10 @@ static constexpr __device__ ggml_cuda_mmq_config ggml_cuda_mmq_get_config(ggml_t
 #else
     return ggml_cuda_mmq_get_config_rdna2(type, J, fallback);
 #endif // CDNA
+#elif defined(MUSA_WMMA_AVAILABLE)
+    return ggml_cuda_mmq_get_config_musa(type, J, fallback);
 #else
-#if defined(BLACKWELL_MMA_AVAILABLE)  || (__MUSA_ARCH__ >= 420)
+#ifdef BLACKWELL_MMA_AVAILABLE
     return ggml_cuda_mmq_get_config_blackwell(type, J, fallback);
 #elif (__CUDA_ARCH__ >= GGML_CUDA_CC_VOLTA)
     return ggml_cuda_mmq_get_config_ampere(type, J, fallback);
