@@ -5,6 +5,7 @@
 #include <mublas.h>
 #include <musa_bf16.h>
 #include <musa_fp16.h>
+
 #define CUBLAS_COMPUTE_16F CUDA_R_16F
 #define CUBLAS_COMPUTE_32F CUDA_R_32F
 #define CUBLAS_COMPUTE_32F_FAST_16F MUBLAS_COMPUTE_32F_FAST_16F
@@ -149,3 +150,7 @@
 
 typedef __mt_bfloat16 nv_bfloat16;
 typedef __mt_bfloat162 nv_bfloat162;
+
+#include <musa_fp8.h>
+#define FP8_AVAILABLE
+typedef __mt_fp8_e4m3 __nv_fp8_e4m3;
